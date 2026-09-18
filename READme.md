@@ -1,10 +1,10 @@
-# RTOS-Based Smart Door Lock System using LPC1768
+#  Smart Door Lock System using ARM LPC1768
 
 ## Overview
-This project implements an **RTOS-based smart door lock system** using the **LPC1768 (ARM Cortex-M3)** microcontroller.  
+This project implements an ** smart door lock system** using the **LPC1768 (ARM Cortex-M3)** microcontroller.  
 The system provides secure access control using a password entered through **UART (serial input)**, displays status on a **16×2 LCD**, and indicates lock/unlock states using an **LED**.
 
-The project demonstrates **embedded system design**, **peripheral interfacing**, and **task-based control logic** suitable for academic and learning purposes.
+The project demonstrates **embedded system design**, **peripheral interfacing** suitable for academic and learning purposes.
 
 ---
 
