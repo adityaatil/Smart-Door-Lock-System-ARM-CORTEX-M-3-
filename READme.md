@@ -1,76 +1,62 @@
-#  Smart Door Lock System using ARM LPC1768
+# Smart Door Lock System using LPC1768 (ARM Cortex-M3)
 
 ## Overview
-This project implements an ** smart door lock system** using the **LPC1768 (ARM Cortex-M3)** microcontroller.  
-The system provides secure access control using a password entered through **UART (serial input)**, displays status on a **16×2 LCD**, and indicates lock/unlock states using an **LED**.
-
-The project demonstrates **embedded system design**, **peripheral interfacing** suitable for academic and learning purposes.
-
----
+This project implements a smart door lock system using the LPC1768 microcontroller. It uses UART for password input, a 16x2 LCD for user interaction, and an LED for system status. The system is implemented in a compact Keil uVision 5 RTX-style RTOS design.
 
 ## Features
-- Password-protected door locking system  
-- UART-based password input (via PC or mobile serial terminal)  
-- Password masking on LCD (`****`)  
-- Maximum attempt limit with system lock  
-- LED indication for:
-  - Access granted
-  - System locked
-- Timer-based delays and RTOS-style task control  
-- “Forgot password” reset mechanism  
+- Password-based door lock logic
+- UART serial input from a PC/terminal
+- 16x2 LCD display
+- LED indication for access and lock state
+- Retry limit after incorrect password attempts
+- Reset flow using the word "forgot"
+- Keil RTX task-based design for LPC1768
 
----
+## Hardware Used
+- LPC1768 development board
+- 16x2 LCD module
+- LED
+- USB-to-UART interface
+- Power supply
 
-## Hardware Requirements
-- LPC1768 ARM Cortex-M3 Development Board  
-- 16×2 LCD (4-bit mode)  
-- LED  
-- USB-to-Serial interface / UART terminal  
-- Power supply  
-
----
-
-## Software Requirements
-- Keil µVision IDE  
-- ARM Compiler  
-- LPC17xx CMSIS libraries  
-- Serial terminal 
----
-
-## Block Diagram
-The system consists of the following main blocks:
-- LPC1768 Microcontroller (Central Control)
-- UART Interface (Password Input)
-- LCD Display (User Interface)
-- Timer (Delay & RTOS timing control)
-- Password Verification & Access Control (Software Task)
-- LED Indicator (System Status)
-
----
+## Software Used
+- Keil uVision 5
+- LPC17xx CMSIS drivers
+- RTX RTOS library
+- UART and LCD peripheral drivers
 
 ## Working Principle
-1. User enters a password via UART.
-2. Input is masked and displayed on the LCD.
-3. Password is verified by a software task running on the LPC1768.
-4. If the password is correct:
-   - Access is granted
-   - LED blinks and then stays ON
-5. If the password is wrong:
-   - Attempt counter increments
-   - System locks after maximum attempts
-6. Timer controls delays and task timing.
+1. The system displays `ENTER PASSWORD` on the LCD.
+2. The user enters a 4-digit password through UART.
+3. The entered digits are shown as `*` on the LCD.
+4. The firmware compares the entered password with the predefined password `1234`.
+5. If the password matches:
+   - `ACCESS GRANTED` is displayed
+   - LED is turned ON
+6. If the password is wrong:
+   - `WRONG PASSWORD` is displayed
+   - the attempt counter increases
+7. After 3 failed attempts:
+   - the system enters `SYSTEM LOCKED`
+   - the LED blinks continuously
+8. The word `forgot` resets the access state and allows re-entry.
 
----
+## File Structure
+- `Code/Rtos_lock_sys.c` - main RTOS-based firmware
+- `Code/UART0.c` - UART0 driver
+- `Code/UART0.h` - UART0 declarations
+- `Code/Lcd.c` - LCD driver
+- `Code/Lcd.h` - LCD declarations
 
-## Applications
-- Smart door locking systems  
-- Embedded security systems  
-- RTOS learning projects  
-- Academic mini-projects  
+## Build Notes
+This project is intended for Keil uVision 5 with:
+- LPC1768 device support
+- CMSIS core files
+- RTX RTOS library enabled
+- UART and LCD drivers linked into the project
 
----
+## Important
+This is a learning and embedded project for hardware interfacing and RTOS task design. It is suitable for academic and mini-project use.
 
 ## Author
-**Aditya Vijay Patil**  
-Department of Electrical and Electronics Engineering  
-
+Aditya Vijay Patil
