@@ -1,294 +1,239 @@
-#include <stdio.h>
 #include <string.h>
 #include <LPC17xx.h>
 
-/* ================= LCD PIN DEFINITIONS ================= */
-#define DT_CTRL   (0x0F << 20)   // P1.20–P1.23
-#define RS_CTRL   (1 << 25)      // P3.25
-#define RW_CTRL   (1 << 26)      // P3.26
-#define EN_CTRL   (1 << 28)      // P4.28
+/* LPC1768 pin assignments */
+#define LCD_DATA    (0x0F << 20)       /* P1.20-P1.23 */
+#define LCD_RS      (1 << 25)          /* P3.25 */
+#define LCD_RW      (1 << 26)          /* P3.26 */
+#define LCD_EN      (1 << 28)          /* P4.28 */
+#define LED         (1 << 18)          /* P1.18 */
 
-/* ================= LED PIN ================= */
-#define LED_PIN   (1 << 18)      // P1.18
+#define PASSWORD    "1234"
+#define MAX_TRIES   3
 
-/* ================= PASSWORD ================= */
-#define PASSWORD "1234"
-#define MAX_ATTEMPTS 3
+static unsigned long data_word;
+static char password[5];
+static int password_index;
+static int tries;
 
-/* ================= GLOBAL VARIABLES ================= */
-unsigned long int temp1 = 0, temp2 = 0;
-char input[5];          // EXACT 4 digits + null
-int idx = 0;
-int attempts = 0;
+static void timer_init(void);
+static void delay_ms(unsigned int ms);
+static void uart_init(void);
+static char uart_getchar(void);
+static void lcd_init(void);
+static void lcd_command(unsigned char command);
+static void lcd_char(unsigned char character);
+static void lcd_string(const char *text);
+static void lcd_clear(void);
+static void lcd_prompt(void);
+static void lcd_write_nibble(unsigned long nibble, int character);
+static void lcd_delay(unsigned int count);
+static void led_blink(unsigned int count);
 
-/* ================= FUNCTION PROTOTYPES ================= */
-void initTimer0(void);
-void delayMS(unsigned int);
-
-void UART0_Init(void);
-char UART0_GetChar(void);
-
-void lcd_init(void);
-void lcd_com(void);
-void lcd_data(void);
-void wr_cn(void);
-void wr_dn(void);
-void delay_lcd(unsigned int);
-void clear_ports(void);
-void lcd_puts(unsigned char *);
-
-void LED_Blink3(void);
-
-/* ================= MAIN ================= */
-int main(void)
+static void timer_init(void)
 {
-    char ch;
-    char forgot_str[7] = "forgot";
-    int forgot_idx = 0;
-
-    SystemInit();
-    SystemCoreClockUpdate();
-
-    initTimer0();
-    lcd_init();
-    UART0_Init();
-
-    // Configure P1.18 as GPIO
-    LPC_GPIO1->FIODIR |= LED_PIN; // Output
-    LPC_GPIO1->FIOCLR = LED_PIN;  // LED OFF initially
-
-    temp1 = 0x01;
-    lcd_com();
-    delayMS(5);
-    lcd_puts((unsigned char*)"ENTER PASSWORD");
-
-    temp1 = 0xC0;
-    lcd_com();
-    delayMS(5);
-
-    while (1)
-    {
-        // SYSTEM LOCKED CHECK
-        if (attempts >= MAX_ATTEMPTS)
-        {
-            temp1 = 0x01;
-            lcd_com();
-            delayMS(5);
-            lcd_puts((unsigned char*)"SYSTEM LOCKED");
-
-            // Blink LED continuously
-            while (1)
-            {
-                LPC_GPIO1->FIOSET = LED_PIN;  // LED ON
-                delayMS(500);
-                LPC_GPIO1->FIOCLR = LED_PIN;  // LED OFF
-                delayMS(500);
-            }
-        }
-
-        ch = UART0_GetChar();
-
-        // Convert uppercase to lowercase for "forgot"
-        if (ch >= 'A' && ch <= 'Z') ch += 32;
-
-        // Check for "forgot"
-        if (ch == forgot_str[forgot_idx])
-        {
-            forgot_idx++;
-            if (forgot_idx == 6)
-            {
-                temp1 = 0x01; lcd_com(); delayMS(5);
-                lcd_puts((unsigned char*)"RESET PASSWORD");
-                forgot_idx = 0;
-                idx = 0;
-                attempts = 0;
-                LPC_GPIO1->FIOCLR = LED_PIN; // LED OFF
-                delayMS(2000);
-                temp1 = 0x01; lcd_com(); delayMS(5);
-                lcd_puts((unsigned char*)"ENTER PASSWORD");
-                temp1 = 0xC0; lcd_com(); delayMS(5);
-            }
-            continue;
-        }
-        else
-        {
-            forgot_idx = 0;
-        }
-
-        // Accept only digits
-        if (ch < '0' || ch > '9') continue;
-
-        input[idx++] = ch;
-        temp1 = '*';
-        lcd_data(); // Password masking
-
-        // Check after 4 digits
-        if (idx == 4)
-        {
-            input[4] = '\0';
-
-            temp1 = 0x01; lcd_com(); delayMS(5); // Clear LCD
-            if (strcmp(input, PASSWORD) == 0)
-            {
-                lcd_puts((unsigned char*)"ACCESS GRANTED");
-                delayMS(50); // ensure LCD updates
-
-                // Blink LED 3 times for visual confirmation
-                LED_Blink3();
-
-                // Turn LED ON permanently after blink
-                LPC_GPIO1->FIOSET = LED_PIN;
-
-                while (1);  // stop system
-            }
-            else
-            {
-                lcd_puts((unsigned char*)"WRONG PASSWORD");
-                LPC_GPIO1->FIOCLR = LED_PIN; // ensure LED OFF
-                attempts++;
-                delayMS(1500);
-            }
-
-            // Reset input
-            idx = 0;
-            temp1 = 0x01; lcd_com(); delayMS(5);
-            lcd_puts((unsigned char*)"ENTER PASSWORD");
-            temp1 = 0xC0; lcd_com(); delayMS(5);
-        }
-    }
+    LPC_SC->PCONP |= (1 << 1);
+    LPC_TIM0->CTCR = 0;
+    LPC_TIM0->PR = 25000 - 1;
+    LPC_TIM0->TCR = 2;
 }
 
-void LED_Blink3(void)
+static void delay_ms(unsigned int ms)
 {
-    int i;  // Declare outside the for loop
-    for(i = 0; i < 3; i++)
-    {
-        LPC_GPIO1->FIOSET = LED_PIN;
-        delayMS(300);
-        LPC_GPIO1->FIOCLR = LED_PIN;
-        delayMS(300);
+    LPC_TIM0->TCR = 2;
+    LPC_TIM0->TCR = 1;
+    while (LPC_TIM0->TC < ms) {
     }
+    LPC_TIM0->TCR = 0;
 }
 
-
-/* ================= UART ================= */
-void UART0_Init(void)
+static void uart_init(void)
 {
     LPC_SC->PCONP |= (1 << 3);
     LPC_PINCON->PINSEL0 &= ~((3 << 4) | (3 << 6));
-    LPC_PINCON->PINSEL0 |=  (1 << 4) | (1 << 6);   // P0.2 TXD0, P0.3 RXD0
+    LPC_PINCON->PINSEL0 |= (1 << 4) | (1 << 6); /* P0.2 TXD0, P0.3 RXD0 */
 
-    LPC_UART0->LCR = 0x83;
-    LPC_UART0->DLL = 78;      // 9600 baud @ 12MHz
+    LPC_UART0->LCR = 0x83;              /* 8-bit, 1 stop, enable divisor */
+    LPC_UART0->DLL = 78;                /* 9600 baud for the original clock */
     LPC_UART0->DLM = 0;
     LPC_UART0->LCR = 0x03;
 }
 
-char UART0_GetChar(void)
+static char uart_getchar(void)
 {
-    while (!(LPC_UART0->LSR & 0x01));
+    while (!(LPC_UART0->LSR & 1)) {
+    }
     return LPC_UART0->RBR;
 }
 
-/* ================= TIMER ================= */
-void initTimer0(void)
+static void lcd_delay(unsigned int count)
 {
-    LPC_SC->PCONP |= (1 << 1);
-    LPC_TIM0->CTCR = 0x00;
-    LPC_TIM0->PR   = 25000 - 1;
-    LPC_TIM0->TCR  = 0x02;
+    volatile unsigned int i;
+    for (i = 0; i < count; i++) {
+    }
 }
 
-void delayMS(unsigned int ms)
+static void lcd_write_nibble(unsigned long nibble, int character)
 {
-    LPC_TIM0->TCR = 0x02;
-    LPC_TIM0->TCR = 0x01;
-    while (LPC_TIM0->TC < ms);
-    LPC_TIM0->TCR = 0x00;
+    LPC_GPIO1->FIOCLR = LCD_DATA;
+    LPC_GPIO1->FIOSET = nibble;
+    LPC_GPIO3->FIOCLR = LCD_RW;
+    if (character) {
+        LPC_GPIO3->FIOSET = LCD_RS;
+    } else {
+        LPC_GPIO3->FIOCLR = LCD_RS;
+    }
+    LPC_GPIO4->FIOSET = LCD_EN;
+    lcd_delay(25);
+    LPC_GPIO4->FIOCLR = LCD_EN;
 }
 
-/* ================= LCD ================= */
-void lcd_init(void)
+static void lcd_command(unsigned char command)
+{
+    lcd_write_nibble((command & 0xF0) << 16, 0);
+    lcd_write_nibble((command & 0x0F) << 20, 0);
+    lcd_delay(1000);
+}
+
+static void lcd_char(unsigned char character)
+{
+    lcd_write_nibble((character & 0xF0) << 16, 1);
+    lcd_write_nibble((character & 0x0F) << 20, 1);
+    lcd_delay(1000);
+}
+
+static void lcd_string(const char *text)
+{
+    while (*text) {
+        lcd_char((unsigned char)*text++);
+    }
+}
+
+static void lcd_clear(void)
+{
+    lcd_command(0x01);
+    delay_ms(5);
+}
+
+static void lcd_prompt(void)
+{
+    lcd_clear();
+    lcd_string("ENTER PASSWORD");
+    lcd_command(0xC0);
+}
+
+static void lcd_init(void)
 {
     LPC_PINCON->PINSEL3 &= 0xFFFF00FF;
     LPC_PINCON->PINSEL7 &= 0xFFF3FFFF;
     LPC_PINCON->PINSEL9 &= 0xFCFFFFFF;
 
-    LPC_GPIO1->FIODIR |= DT_CTRL;
-    LPC_GPIO3->FIODIR |= RS_CTRL | RW_CTRL;
-    LPC_GPIO4->FIODIR |= EN_CTRL;
+    LPC_GPIO1->FIODIR |= LCD_DATA;
+    LPC_GPIO3->FIODIR |= LCD_RS | LCD_RW;
+    LPC_GPIO4->FIODIR |= LCD_EN;
 
-    clear_ports();
-    delay_lcd(30000);
+    LPC_GPIO1->FIOCLR = LCD_DATA;
+    LPC_GPIO3->FIOCLR = LCD_RS | LCD_RW;
+    LPC_GPIO4->FIOCLR = LCD_EN;
+    lcd_delay(30000);
 
-    temp2 = 0x30; wr_cn(); delay_lcd(30000);
-    temp2 = 0x30; wr_cn(); delay_lcd(30000);
-    temp2 = 0x20; wr_cn(); delay_lcd(30000);
+    lcd_write_nibble(0x30 << 16, 0);
+    lcd_delay(30000);
+    lcd_write_nibble(0x30 << 16, 0);
+    lcd_delay(30000);
+    lcd_write_nibble(0x20 << 16, 0);
+    lcd_delay(30000);
 
-    temp1 = 0x28; lcd_com();
-    temp1 = 0x0C; lcd_com();
-    temp1 = 0x06; lcd_com();
-    temp1 = 0x01; lcd_com();
-    delayMS(5);
+    lcd_command(0x28);                 /* 4-bit, 2-line mode */
+    lcd_command(0x0C);                 /* display ON, cursor OFF */
+    lcd_command(0x06);                 /* increment cursor */
+    lcd_clear();
 }
 
-void lcd_com(void)
+static void led_blink(unsigned int count)
 {
-    temp2 = (temp1 & 0xF0) << 16;
-    wr_cn();
-    temp2 = (temp1 & 0x0F) << 20;
-    wr_cn();
-    delay_lcd(1000);
+    while (count--) {
+        LPC_GPIO1->FIOSET = LED;
+        delay_ms(300);
+        LPC_GPIO1->FIOCLR = LED;
+        delay_ms(300);
+    }
 }
 
-void lcd_data(void)
+int main(void)
 {
-    temp2 = (temp1 & 0xF0) << 16;
-    wr_dn();
-    temp2 = (temp1 & 0x0F) << 20;
-    wr_dn();
-    delay_lcd(1000);
-}
+    char input;
+    const char reset_word[] = "forgot";
+    int reset_index = 0;
 
-void wr_cn(void)
-{
-    clear_ports();
-    LPC_GPIO1->FIOPIN = temp2;
-    LPC_GPIO3->FIOCLR = RS_CTRL | RW_CTRL;
-    LPC_GPIO4->FIOSET = EN_CTRL;
-    delay_lcd(25);
-    LPC_GPIO4->FIOCLR = EN_CTRL;
-}
+    SystemInit();
+    SystemCoreClockUpdate();
+    timer_init();
+    lcd_init();
+    uart_init();
 
-void wr_dn(void)
-{
-    clear_ports();
-    LPC_GPIO1->FIOPIN = temp2;
-    LPC_GPIO3->FIOSET = RS_CTRL;
-    LPC_GPIO3->FIOCLR = RW_CTRL;
-    LPC_GPIO4->FIOSET = EN_CTRL;
-    delay_lcd(25);
-    LPC_GPIO4->FIOCLR = EN_CTRL;
-}
+    LPC_GPIO1->FIODIR |= LED;
+    LPC_GPIO1->FIOCLR = LED;
+    lcd_prompt();
 
-void delay_lcd(unsigned int d)
-{
-    unsigned int i;
-    for (i = 0; i < d; i++);
-}
+    while (1) {
+        if (tries >= MAX_TRIES) {
+            lcd_clear();
+            lcd_string("SYSTEM LOCKED");
+            while (1) {
+                LPC_GPIO1->FIOSET = LED;
+                delay_ms(500);
+                LPC_GPIO1->FIOCLR = LED;
+                delay_ms(500);
+            }
+        }
 
-void clear_ports(void)
-{
-    LPC_GPIO1->FIOCLR = DT_CTRL;
-    LPC_GPIO3->FIOCLR = RS_CTRL | RW_CTRL;
-    LPC_GPIO4->FIOCLR = EN_CTRL;
-}
+        input = uart_getchar();
+        if (input >= 'A' && input <= 'Z') {
+            input += 'a' - 'A';
+        }
 
-void lcd_puts(unsigned char *str)
-{
-    while (*str)
-    {
-        temp1 = *str++;
-        lcd_data();
+        if (input == reset_word[reset_index]) {
+            reset_index++;
+            if (reset_index == 6) {
+                tries = 0;
+                password_index = 0;
+                reset_index = 0;
+                LPC_GPIO1->FIOCLR = LED;
+                lcd_clear();
+                lcd_string("RESET PASSWORD");
+                delay_ms(2000);
+                lcd_prompt();
+            }
+            continue;
+        }
+        reset_index = 0;
+
+        if (input < '0' || input > '9') {
+            continue;
+        }
+
+        password[password_index++] = input;
+        lcd_char('*');
+
+        if (password_index == 4) {
+            password[4] = '\0';
+            lcd_clear();
+
+            if (strcmp(password, PASSWORD) == 0) {
+                lcd_string("ACCESS GRANTED");
+                led_blink(3);
+                LPC_GPIO1->FIOSET = LED;
+                while (1) {
+                }
+            }
+
+            lcd_string("WRONG PASSWORD");
+            LPC_GPIO1->FIOCLR = LED;
+            tries++;
+            delay_ms(1500);
+            password_index = 0;
+            lcd_prompt();
+        }
     }
 }
